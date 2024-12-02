@@ -5,19 +5,31 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"os/exec"
+	"time"
 
 	"github.com/ifbyol/redeploy-applications/deployer/api"
+	"github.com/ifbyol/redeploy-applications/deployer/git"
 )
+
+const redeployAppCommandTemplate = "okteto pipeline deploy -n \"%s\" --name \"%s\" --repository \"%s\" --branch \"%s\" --reuse-params --wait=false"
 
 func main() {
 	token := os.Getenv("OKTETO_TOKEN")
 	oktetoURL := os.Getenv("OKTETO_URL")
+	targetRepo := os.Getenv("TARGET_REPO")
+	targetBranch := os.Getenv("TARGET_BRANCH")
 
 	logLevel := &slog.LevelVar{} // INFO
 	opts := &slog.HandlerOptions{
 		Level: logLevel,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
+
+	if token == "" || oktetoURL == "" || targetRepo == "" {
+		logger.Error("OKTETO_TOKEN, OKTETO_URL and TARGET_REPO environment variables are required")
+		os.Exit(1)
+	}
 
 	u, err := url.Parse(oktetoURL)
 	if err != nil {
@@ -31,6 +43,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	updateThreshold := time.Now().Add(-time.Hour * 24)
 	for _, ns := range nsList {
 		logger.Info(fmt.Sprintf("Processing namespace '%s'", ns.Name))
 
@@ -42,8 +55,47 @@ func main() {
 		}
 
 		for _, app := range applications {
-			logger.Info(fmt.Sprintf("Applications within namespace '%s': %s", ns.Name, app.Name))
+			if app.Repository == "" {
+				logger.Info(fmt.Sprintf("Skipping application '%s' within namespace '%s' as does not have a repository", app.Name, ns.Name))
+				continue
+			}
+
+			if !git.AreSameRepository(app.Repository, targetRepo) {
+				logger.Info(fmt.Sprintf("Skipping application '%s' within namespace '%s' as repository doesn't match", app.Name, ns.Name))
+				continue
+			}
+
+			if targetBranch != "" && app.Branch != targetBranch {
+				logger.Info(fmt.Sprintf("Skipping application '%s' within namespace '%s' as deployed branch doesn't match", app.Name, ns.Name))
+				continue
+			}
+
+			if app.LastUpdated.After(updateThreshold) {
+				logger.Info(fmt.Sprintf("Skipping application '%s' within namespace '%s' as it was updated recently", app.Name, ns.Name))
+				continue
+			}
+
+			logger.Info(fmt.Sprintf("Redeploying application '%s' within namespace '%s'", app.Name, ns.Name))
+
+			out, err := redeployApp(ns.Name, app.Name, app.Repository, app.Branch)
+			if err != nil {
+				logger.Error(fmt.Sprintf("There was an error redeploying the application '%s' within namespace '%s': %s", app.Name, ns.Name, err))
+			} else {
+				logger.Error(out)
+			}
 		}
 		logger.Info("-----------------------------------------------")
 	}
+}
+
+// redeployApp executes the Okteto CLI command to redeploy an application
+func redeployApp(ns, appName, repo, branch string) (string, error) {
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(redeployAppCommandTemplate, ns, appName, repo, branch))
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return string(out), nil
 }
