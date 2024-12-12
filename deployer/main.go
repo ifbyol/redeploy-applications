@@ -17,7 +17,7 @@ const redeployAppCommandTemplate = "okteto pipeline deploy -n \"%s\" --name \"%s
 func main() {
 	token := os.Getenv("OKTETO_TOKEN")
 	oktetoURL := os.Getenv("OKTETO_URL")
-	targetRepo := os.Getenv("TARGET_REPO")
+	targetRepo := os.Getenv("TARGET_REPOSITORY")
 	targetBranch := os.Getenv("TARGET_BRANCH")
 
 	logLevel := &slog.LevelVar{} // INFO
@@ -27,7 +27,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
 
 	if token == "" || oktetoURL == "" || targetRepo == "" {
-		logger.Error("OKTETO_TOKEN, OKTETO_URL and TARGET_REPO environment variables are required")
+		logger.Error("OKTETO_TOKEN, OKTETO_URL and TARGET_REPOSITORY environment variables are required")
 		os.Exit(1)
 	}
 
@@ -43,6 +43,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	logger.Info(fmt.Sprintf("Looking for dev environments with repository %q", targetRepo))
+
+	// We check for applications that were last updated more than 24 hours ago
 	updateThreshold := time.Now().Add(-time.Hour * 24)
 	for _, ns := range nsList {
 		logger.Info(fmt.Sprintf("Processing namespace '%s'", ns.Name))
@@ -81,7 +84,7 @@ func main() {
 			if err != nil {
 				logger.Error(fmt.Sprintf("There was an error redeploying the application '%s' within namespace '%s': %s", app.Name, ns.Name, err))
 			} else {
-				logger.Error(out)
+				logger.Info(out)
 			}
 		}
 		logger.Info("-----------------------------------------------")
