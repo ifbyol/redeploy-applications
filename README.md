@@ -24,13 +24,13 @@ export NAMESPACE=<<your-namespace>>
 export REDEPLOY_JOB_SCHEDULE="0 20 * * *"
 ```
 
+For example, 0 0 13 * 5 states that the task must be started every Friday at midnight, as well as on the 13th of each month at midnight.
+
 - Create another local variable to define the repository to redeploy:
 
 ```bash
 export TARGET_REPOSITORY=https://github.com/okteto/movies
 ```
-
-For example, 0 0 13 * 5 states that the task must be started every Friday at midnight, as well as on the 13th of each month at midnight.
 
 - Run the following command to create the cronjob:
 
